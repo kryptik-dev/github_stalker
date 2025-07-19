@@ -124,11 +124,11 @@ async function getRepoEventDetails(repo) {
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // Restrict commands to a specific channel
+  // Restrict commands to a specific channel, but allow in DMs
   const allowedChannelId = '1396206251364450344';
-  if (interaction.channelId !== allowedChannelId) {
+  if (interaction.guild && interaction.channelId !== allowedChannelId) {
     await interaction.reply({
-      content: `Please use this command in <#${allowedChannelId}>.`,
+      content: `Please use this command in <#${allowedChannelId}> or in a DM with me.`,
       ephemeral: true
     });
     return;
