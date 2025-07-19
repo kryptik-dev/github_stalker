@@ -6,6 +6,7 @@ import { JSONFile } from 'lowdb/node';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import 'dotenv/config';
+import express from 'express';
 
 // Discord bot token and client
 const TOKEN = process.env.DISCORD_TOKEN || 'YOUR_DISCORD_TOKEN_HERE';
@@ -446,4 +447,14 @@ client.once(Events.ClientReady, async () => {
   await initDB();
 });
 
-client.login(TOKEN); 
+client.login(TOKEN);
+
+// Express server for Render webservice
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => {
+  res.send('GitHub Stalker Bot is running!');
+});
+app.listen(PORT, () => {
+  console.log(`Express server listening on port ${PORT}`);
+}); 
