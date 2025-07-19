@@ -74,9 +74,12 @@ async function registerCommands() {
 async function githubRequest(url) {
   try {
     const headers = GITHUB_TOKEN ? { Authorization: `token ${GITHUB_TOKEN}` } : {};
+    console.log(`[GitHub API] Requesting: ${url}`);
     const res = await axios.get(url, { headers });
+    console.log(`[GitHub API] Response for ${url}:`, JSON.stringify(res.data).slice(0, 300));
     return res.data;
   } catch (err) {
+    console.error(`[GitHub API] Error for ${url}:`, err?.response?.data || err);
     return null;
   }
 }
@@ -378,11 +381,15 @@ client.on(Events.InteractionCreate, async interaction => {
 
 // Periodic check for new GitHub activity
 schedule.scheduleJob('*/5 * * * *', async () => {
+  console.log('[Scheduler] Starting periodic GitHub activity check...');
   await initDB();
   for (const [userId, userData] of Object.entries(db.data.users)) {
+    console.log(`[Scheduler] Checking userId: ${userId}`);
     // Check stalked users
     for (const username of Object.keys(userData.stalkedUsers)) {
+      console.log(`[Scheduler] Checking stalked user: ${username}`);
       const latest = await getLatestUserEvent(username);
+      console.log(`[Scheduler] Latest event for user ${username}: ${latest}`);
       if (!latest) continue;
       if (userData.stalkedUsers[username] !== latest) {
         // New event detected
@@ -391,6 +398,7 @@ schedule.scheduleJob('*/5 * * * *', async () => {
             const user = await client.users.fetch(userId);
             const event = await getUserEventDetails(username);
             const url = event?.repo?.url?.replace('api.github.com/repos', 'github.com') || `https://github.com/${username}`;
+            console.log(`[Scheduler] Sending DM to ${userId} about new user event for ${username}`);
             await user.send({
               embeds: [{
                 title: `New activity by ${username}`,
@@ -402,16 +410,22 @@ schedule.scheduleJob('*/5 * * * *', async () => {
               }],
             });
           } catch (e) {
-            console.error(`Failed to DM user ${userId}:`, e);
+            console.error(`[Scheduler] Failed to DM user ${userId}:`, e);
           }
+        } else {
+          console.log(`[Scheduler] First event for user ${username}, not notifying.`);
         }
         userData.stalkedUsers[username] = latest;
         await db.write();
+      } else {
+        console.log(`[Scheduler] No new event for user ${username}.`);
       }
     }
     // Check stalked repos
     for (const repo of Object.keys(userData.stalkedRepos)) {
+      console.log(`[Scheduler] Checking stalked repo: ${repo}`);
       const latest = await getLatestRepoEvent(repo);
+      console.log(`[Scheduler] Latest event for repo ${repo}: ${latest}`);
       if (!latest) continue;
       if (userData.stalkedRepos[repo] !== latest) {
         // New event detected
@@ -420,6 +434,7 @@ schedule.scheduleJob('*/5 * * * *', async () => {
             const user = await client.users.fetch(userId);
             const event = await getRepoEventDetails(repo);
             const url = event?.repo?.url?.replace('api.github.com/repos', 'github.com') || `https://github.com/${repo}`;
+            console.log(`[Scheduler] Sending DM to ${userId} about new repo event for ${repo}`);
             await user.send({
               embeds: [{
                 title: `New activity in ${repo}`,
@@ -431,14 +446,19 @@ schedule.scheduleJob('*/5 * * * *', async () => {
               }],
             });
           } catch (e) {
-            console.error(`Failed to DM user ${userId}:`, e);
+            console.error(`[Scheduler] Failed to DM user ${userId}:`, e);
           }
+        } else {
+          console.log(`[Scheduler] First event for repo ${repo}, not notifying.`);
         }
         userData.stalkedRepos[repo] = latest;
         await db.write();
+      } else {
+        console.log(`[Scheduler] No new event for repo ${repo}.`);
       }
     }
   }
+  console.log('[Scheduler] GitHub activity check complete.');
 });
 
 client.once(Events.ClientReady, async () => {
