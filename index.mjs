@@ -19,7 +19,15 @@ const client = new Client({
 // Setup lowdb for persistent storage
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dbFile = path.join(__dirname, 'db.json');
+const dbFile = process.env.DB_FILE || path.join(__dirname, 'data', 'db.json');
+
+// Ensure the data directory exists
+import fs from 'fs';
+const dataDir = path.dirname(dbFile);
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
 const adapter = new JSONFile(dbFile);
 const db = new Low(adapter, { users: {} });
 
@@ -144,11 +152,11 @@ client.on(Events.InteractionCreate, async interaction => {
     if (userData.stalkedUsers[username]) {
       await interaction.reply({
         embeds: [{
-          title: 'Already Stalking',
+            title: 'Already Stalking',
           description: `You are already stalking **${username}**.`,
           color: 0x24292e,
           footer: { text: 'GitHub Stalker Bot' },
-          timestamp: new Date().toISOString(),
+            timestamp: new Date().toISOString(),
         }],
         flags: 4096
       });
@@ -158,11 +166,11 @@ client.on(Events.InteractionCreate, async interaction => {
     if (!exists) {
       await interaction.reply({
         embeds: [{
-          title: 'User Not Found',
+            title: 'User Not Found',
           description: `That GitHub username does not exist.`,
           color: 0xED4245,
           footer: { text: 'GitHub Stalker Bot' },
-          timestamp: new Date().toISOString(),
+            timestamp: new Date().toISOString(),
         }],
         flags: 4096
       });
@@ -175,7 +183,7 @@ client.on(Events.InteractionCreate, async interaction => {
     await db.write();
     await interaction.reply({
       embeds: [{
-        title: 'Stalking Started',
+          title: 'Stalking Started',
         description: `Now stalking **${username}**. You'll get a DM when they have new activity!`,
         thumbnail: userProfile && userProfile.avatar_url ? { url: userProfile.avatar_url } : undefined,
         color: 0x24292e,
@@ -248,11 +256,11 @@ client.on(Events.InteractionCreate, async interaction => {
     if (!userData.stalkedUsers[username]) {
       await interaction.reply({
         embeds: [{
-          title: 'Not Stalking',
+            title: 'Not Stalking',
           description: `You are not stalking **${username}**.`,
-          color: 0xED4245,
+            color: 0xED4245,
           footer: { text: 'GitHub Stalker Bot' },
-          timestamp: new Date().toISOString(),
+            timestamp: new Date().toISOString(),
         }],
         flags: 4096
       });
@@ -262,7 +270,7 @@ client.on(Events.InteractionCreate, async interaction => {
     await db.write();
     await interaction.reply({
       embeds: [{
-        title: 'Stalking Stopped',
+          title: 'Stalking Stopped',
         description: `No longer stalking **${username}**.`,
         color: 0x24292e,
         footer: { text: 'GitHub Stalker Bot' },
@@ -301,26 +309,80 @@ client.on(Events.InteractionCreate, async interaction => {
     const stalkedUsers = Object.keys(userData.stalkedUsers);
     const stalkedRepos = Object.keys(userData.stalkedRepos);
     let desc = '';
+    let fields = [];
     if (stalkedUsers.length === 0 && stalkedRepos.length === 0) {
       desc = 'You are not stalking any GitHub users or repositories.';
-    } else {
-      if (stalkedUsers.length > 0) {
-        desc += `**Users:**\n${stalkedUsers.map(u => `• ${u}`).join('\n')}\n`;
-      }
-      if (stalkedRepos.length > 0) {
-        desc += `**Repositories:**\n${stalkedRepos.map(r => `• ${r}`).join('\n')}`;
-      }
+      await interaction.reply({
+        embeds: [{
+          title: 'Currently Stalking',
+          description: desc,
+          color: 0x24292e,
+          footer: { text: 'GitHub Stalker Bot' },
+            timestamp: new Date().toISOString(),
+        }],
+        flags: 4096
+      });
+      return;
     }
-    await interaction.reply({
-      embeds: [{
-        title: 'Currently Stalking',
-        description: desc,
-        color: 0x24292e,
-        footer: { text: 'GitHub Stalker Bot' },
-        timestamp: new Date().toISOString(),
-      }],
-      ephemeral: true
-    });
+    // If only one, show as before
+    if (stalkedUsers.length + stalkedRepos.length === 1) {
+      let thumbnail = undefined;
+      if (stalkedUsers.length === 1) {
+        const profile = await githubRequest(`https://api.github.com/users/${stalkedUsers[0]}`);
+        if (profile && profile.avatar_url) {
+          thumbnail = { url: profile.avatar_url };
+        }
+        desc = `**Users:**\n${stalkedUsers[0]}`;
+      } else if (stalkedRepos.length === 1) {
+        const repoProfile = await githubRequest(`https://api.github.com/repos/${stalkedRepos[0]}`);
+        if (repoProfile && repoProfile.owner && repoProfile.owner.avatar_url) {
+          thumbnail = { url: repoProfile.owner.avatar_url };
+        }
+        desc = `**Repositories:**\n${stalkedRepos[0]}`;
+      }
+      await interaction.reply({
+        embeds: [{
+            title: 'Currently Stalking',
+          description: desc,
+          color: 0x24292e,
+          footer: { text: 'GitHub Stalker Bot' },
+            timestamp: new Date().toISOString(),
+          thumbnail,
+        }],
+        flags: 4096
+      });
+      return;
+    }
+    // Multiple stalks: send one ephemeral embed per user/repo
+    await interaction.reply({ content: 'You are currently stalking:', ephemeral: true });
+    for (const u of stalkedUsers) {
+      const profile = await githubRequest(`https://api.github.com/users/${u}`);
+      await interaction.followUp({
+        embeds: [{
+          title: 'Currently Stalking',
+          description: `**User:** ${u}`,
+          color: 0x24292e,
+          footer: { text: 'GitHub Stalker Bot' },
+          timestamp: new Date().toISOString(),
+          thumbnail: profile && profile.avatar_url ? { url: profile.avatar_url } : undefined,
+        }],
+        ephemeral: true
+      });
+    }
+    for (const r of stalkedRepos) {
+      const repoProfile = await githubRequest(`https://api.github.com/repos/${r}`);
+      await interaction.followUp({
+        embeds: [{
+          title: 'Currently Stalking',
+          description: `**Repository:** ${r}`,
+          color: 0x24292e,
+          footer: { text: 'GitHub Stalker Bot' },
+          timestamp: new Date().toISOString(),
+          thumbnail: repoProfile && repoProfile.owner && repoProfile.owner.avatar_url ? { url: repoProfile.owner.avatar_url } : undefined,
+        }],
+        ephemeral: true
+      });
+    }
     return;
   }
 });
@@ -388,7 +450,7 @@ schedule.scheduleJob('*/5 * * * *', async () => {
                 description: `Type: **${event?.type}**\n[View on GitHub](${url})`,
                 color: 0x24292e,
                 footer: { text: 'GitHub Stalker Bot' },
-                timestamp: new Date().toISOString(),
+                  timestamp: new Date().toISOString(),
               }],
             });
           } catch (e) {
