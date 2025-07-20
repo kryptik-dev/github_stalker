@@ -368,35 +368,11 @@ client.on(Events.InteractionCreate, async interaction => {
       });
     }
 
-    // Add avatar links field if there are multiple items
-    if (stalkedUsers.length + stalkedRepos.length > 1) {
-      const avatarLinks = [];
-      
-      // Add user avatars
-      userProfiles.forEach(({ username, profile }) => {
-        if (profile?.avatar_url) {
-          avatarLinks.push(`[${username}](${profile.avatar_url})`);
-        }
-      });
-      
-      // Add repo owner avatars
-      repoProfiles.forEach(({ repo, repoProfile }) => {
-        if (repoProfile?.owner?.avatar_url) {
-          avatarLinks.push(`[${repo.split('/')[0]}](${repoProfile.owner.avatar_url})`);
-        }
-      });
-      
-      if (avatarLinks.length > 0) {
-        fields.push({
-          name: '🖼️ Avatar Links',
-          value: avatarLinks.slice(0, 10).join(' • '), // Limit to 10 to avoid field length issues
-          inline: false
-        });
-      }
-    }
-
-    // Create embed with all information
-    const embed = {
+    // Create multiple embeds to show all avatars
+    const embeds = [];
+    
+    // Main summary embed
+    const mainEmbed = {
       title: 'Currently Stalking',
       description: `You are stalking **${stalkedUsers.length + stalkedRepos.length}** total items`,
       color: 0x24292e,
@@ -404,22 +380,36 @@ client.on(Events.InteractionCreate, async interaction => {
       footer: { text: 'GitHub Stalker Bot' },
       timestamp: new Date().toISOString(),
     };
+    embeds.push(mainEmbed);
 
-    // Add thumbnail - show the first user's avatar or first repo owner's avatar
-    if (stalkedUsers.length > 0) {
-      const profile = userProfiles[0].profile;
-      if (profile?.avatar_url) {
-        embed.thumbnail = { url: profile.avatar_url };
-      }
-    } else if (stalkedRepos.length > 0) {
-      const repoProfile = repoProfiles[0].repoProfile;
-      if (repoProfile?.owner?.avatar_url) {
-        embed.thumbnail = { url: repoProfile.owner.avatar_url };
-      }
+    // Create individual embeds for each user with their avatar
+    for (const { username, profile } of userProfiles) {
+      const userEmbed = {
+        title: `👤 ${username}`,
+        description: `**User Profile**\n[View on GitHub](https://github.com/${username})`,
+        color: 0x24292e,
+        thumbnail: profile?.avatar_url ? { url: profile.avatar_url } : undefined,
+        footer: { text: 'GitHub Stalker Bot' },
+        timestamp: new Date().toISOString(),
+      };
+      embeds.push(userEmbed);
+    }
+
+    // Create individual embeds for each repository with owner's avatar
+    for (const { repo, repoProfile } of repoProfiles) {
+      const repoEmbed = {
+        title: `📦 ${repo}`,
+        description: `**Repository**\n[View on GitHub](https://github.com/${repo})`,
+        color: 0x24292e,
+        thumbnail: repoProfile?.owner?.avatar_url ? { url: repoProfile.owner.avatar_url } : undefined,
+        footer: { text: 'GitHub Stalker Bot' },
+        timestamp: new Date().toISOString(),
+      };
+      embeds.push(repoEmbed);
     }
 
     await interaction.reply({
-      embeds: [embed],
+      embeds: embeds,
       flags: 4096
     });
     return;
