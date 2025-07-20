@@ -308,81 +308,120 @@ client.on(Events.InteractionCreate, async interaction => {
   } else if (interaction.commandName === 'stalked') {
     const stalkedUsers = Object.keys(userData.stalkedUsers);
     const stalkedRepos = Object.keys(userData.stalkedRepos);
-    let desc = '';
-    let fields = [];
+    
     if (stalkedUsers.length === 0 && stalkedRepos.length === 0) {
-      desc = 'You are not stalking any GitHub users or repositories.';
       await interaction.reply({
         embeds: [{
           title: 'Currently Stalking',
-          description: desc,
+          description: 'You are not stalking any GitHub users or repositories.',
           color: 0x24292e,
           footer: { text: 'GitHub Stalker Bot' },
-            timestamp: new Date().toISOString(),
+          timestamp: new Date().toISOString(),
         }],
         flags: 4096
       });
       return;
     }
-    // If only one, show as before
-    if (stalkedUsers.length + stalkedRepos.length === 1) {
-      let thumbnail = undefined;
-      if (stalkedUsers.length === 1) {
-        const profile = await githubRequest(`https://api.github.com/users/${stalkedUsers[0]}`);
-        if (profile && profile.avatar_url) {
-          thumbnail = { url: profile.avatar_url };
+
+    // Fetch all profiles in parallel for better performance
+    const userProfiles = await Promise.all(
+      stalkedUsers.map(async (username) => {
+        const profile = await githubRequest(`https://api.github.com/users/${username}`);
+        return { username, profile };
+      })
+    );
+
+    const repoProfiles = await Promise.all(
+      stalkedRepos.map(async (repo) => {
+        const repoProfile = await githubRequest(`https://api.github.com/repos/${repo}`);
+        return { repo, repoProfile };
+      })
+    );
+
+    // Build description with avatars and names
+    let description = '';
+    const fields = [];
+
+    if (stalkedUsers.length > 0) {
+      const userList = userProfiles.map(({ username, profile }) => {
+        const avatarUrl = profile?.avatar_url || 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png';
+        return `👤 **${username}**`;
+      }).join('\n');
+      
+      fields.push({
+        name: `👥 Users (${stalkedUsers.length})`,
+        value: userList,
+        inline: true
+      });
+    }
+
+    if (stalkedRepos.length > 0) {
+      const repoList = repoProfiles.map(({ repo, repoProfile }) => {
+        const avatarUrl = repoProfile?.owner?.avatar_url || 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png';
+        return `📦 **${repo}**`;
+      }).join('\n');
+      
+      fields.push({
+        name: `📦 Repositories (${stalkedRepos.length})`,
+        value: repoList,
+        inline: true
+      });
+    }
+
+    // Add avatar links field if there are multiple items
+    if (stalkedUsers.length + stalkedRepos.length > 1) {
+      const avatarLinks = [];
+      
+      // Add user avatars
+      userProfiles.forEach(({ username, profile }) => {
+        if (profile?.avatar_url) {
+          avatarLinks.push(`[${username}](${profile.avatar_url})`);
         }
-        desc = `**Users:**\n${stalkedUsers[0]}`;
-      } else if (stalkedRepos.length === 1) {
-        const repoProfile = await githubRequest(`https://api.github.com/repos/${stalkedRepos[0]}`);
-        if (repoProfile && repoProfile.owner && repoProfile.owner.avatar_url) {
-          thumbnail = { url: repoProfile.owner.avatar_url };
+      });
+      
+      // Add repo owner avatars
+      repoProfiles.forEach(({ repo, repoProfile }) => {
+        if (repoProfile?.owner?.avatar_url) {
+          avatarLinks.push(`[${repo.split('/')[0]}](${repoProfile.owner.avatar_url})`);
         }
-        desc = `**Repositories:**\n${stalkedRepos[0]}`;
+      });
+      
+      if (avatarLinks.length > 0) {
+        fields.push({
+          name: '🖼️ Avatar Links',
+          value: avatarLinks.slice(0, 10).join(' • '), // Limit to 10 to avoid field length issues
+          inline: false
+        });
       }
-      await interaction.reply({
-        embeds: [{
-            title: 'Currently Stalking',
-          description: desc,
-          color: 0x24292e,
-          footer: { text: 'GitHub Stalker Bot' },
-            timestamp: new Date().toISOString(),
-          thumbnail,
-        }],
-        flags: 4096
-      });
-      return;
     }
-    // Multiple stalks: send one ephemeral embed per user/repo
-    await interaction.reply({ content: 'You are currently stalking:', ephemeral: true });
-    for (const u of stalkedUsers) {
-      const profile = await githubRequest(`https://api.github.com/users/${u}`);
-      await interaction.followUp({
-        embeds: [{
-          title: 'Currently Stalking',
-          description: `**User:** ${u}`,
-          color: 0x24292e,
-          footer: { text: 'GitHub Stalker Bot' },
-          timestamp: new Date().toISOString(),
-          thumbnail: profile && profile.avatar_url ? { url: profile.avatar_url } : undefined,
-        }],
-        ephemeral: true
-      });
+
+    // Create embed with all information
+    const embed = {
+      title: 'Currently Stalking',
+      description: `You are stalking **${stalkedUsers.length + stalkedRepos.length}** total items`,
+      color: 0x24292e,
+      fields: fields,
+      footer: { text: 'GitHub Stalker Bot' },
+      timestamp: new Date().toISOString(),
+    };
+
+    // Add thumbnail - show the first user's avatar or first repo owner's avatar
+    if (stalkedUsers.length > 0) {
+      const profile = userProfiles[0].profile;
+      if (profile?.avatar_url) {
+        embed.thumbnail = { url: profile.avatar_url };
+      }
+    } else if (stalkedRepos.length > 0) {
+      const repoProfile = repoProfiles[0].repoProfile;
+      if (repoProfile?.owner?.avatar_url) {
+        embed.thumbnail = { url: repoProfile.owner.avatar_url };
+      }
     }
-    for (const r of stalkedRepos) {
-      const repoProfile = await githubRequest(`https://api.github.com/repos/${r}`);
-      await interaction.followUp({
-        embeds: [{
-          title: 'Currently Stalking',
-          description: `**Repository:** ${r}`,
-          color: 0x24292e,
-          footer: { text: 'GitHub Stalker Bot' },
-          timestamp: new Date().toISOString(),
-          thumbnail: repoProfile && repoProfile.owner && repoProfile.owner.avatar_url ? { url: repoProfile.owner.avatar_url } : undefined,
-        }],
-        ephemeral: true
-      });
-    }
+
+    await interaction.reply({
+      embeds: [embed],
+      flags: 4096
+    });
     return;
   }
 });
